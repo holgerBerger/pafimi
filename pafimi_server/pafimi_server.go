@@ -80,6 +80,7 @@ func (*PafimiServerT) AddRequest(request config.Request, result *string) error {
 // CopySlice is the RPC routine that does the copying, it will
 // be called on several servers
 func (*PafimiServerT) CopySlice(arg []string, result *string) error {
+	fmt.Println(arg)
 	return nil
 }
 
@@ -109,7 +110,21 @@ func ExecuteJob(request config.Request, jobid uint64) {
 // loadBalancer receives data through channel and distributes over servers
 // running for each job in parallel
 func loadBalancer(jobid uint64, filechan chan FilenameAndSize) {
+
+	servers := make([]*rpc.Client, 0)
+
+	for _, server := range config.Conf.Client.Servers {
+		// connect to rpc server
+		client, err := rpc.Dial("tcp", server)
+		if err != nil {
+			log.Fatal("could not connect to server.")
+		} else {
+			servers = append(servers, client)
+		}
+	}
+
 	started := false
+	fileList := make([]string, 0, 100000)
 	for file := range filechan {
 		if !started {
 			started = true
@@ -118,8 +133,31 @@ func loadBalancer(jobid uint64, filechan chan FilenameAndSize) {
 			joblist[jobid] = t
 		}
 
-		// FIXME DO WORK HERE
-		fmt.Println("file:", file.name)
+		// gather batches
+		if file.name != "." && file.size != -1 {
+			// gather a batch of files
+			fileList = append(fileList, file.name)
+		} else {
+			// process batches, stripe over servers
+			for s, rpcclient := range servers {
+				templist := make([]string, 0)
+
+				for i := s; i < len(fileList); i += len(servers) {
+					templist = append(templist, fileList[i])
+				}
+
+				if len(templist) > 0 {
+					// do RPC call
+					var reply string
+					err := rpcclient.Call("PafimiServerT.CopySlice", templist, &reply)
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
+			}
+			// empty slice
+			fileList = make([]string, 0, 100000)
+		}
 
 		t := joblist[jobid]
 		t.IncrFiles(file.size)
@@ -137,7 +175,7 @@ func getFileList(dir string, filechan chan FilenameAndSize) {
 	f, _ := os.Open(dir)
 	defer f.Close()
 
-	filelist := make([]os.FileInfo, 0, 1000)
+	filelist := make([]os.FileInfo, 0, 100000)
 	dirlist := make([]os.FileInfo, 0, 1000)
 
 	// get first 1000 files
@@ -161,8 +199,10 @@ func getFileList(dir string, filechan chan FilenameAndSize) {
 	for _, fi := range filelist {
 		filechan <- FilenameAndSize{name: dir + "/" + fi.Name(), size: fi.Size()}
 	}
+	// flush
+	filechan <- FilenameAndSize{name: ".", size: -1}
 
-	// process chield directories
+	// process child directories
 	for _, fi := range dirlist {
 		getFileList(dir+"/"+fi.Name(), filechan)
 	}
@@ -174,6 +214,9 @@ func main() {
 	if len(os.Args) > 1 {
 		port = os.Args[1]
 	}
+
+	// read config
+	config.ReadConf()
 
 	joblist = make(map[uint64]Job)
 
