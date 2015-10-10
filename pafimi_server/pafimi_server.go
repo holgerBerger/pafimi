@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // dummy type to identify RPC
@@ -27,6 +26,12 @@ var (
 	joblist  map[uint64]Job
 	jobmutex sync.Mutex
 )
+
+// struct for channel to pass name and size to loadbalancer
+type FilenameAndSize struct {
+	name string
+	size int64
+}
 
 // StartServer runs the endless rpc server FIX TLS needed
 func StartServer() {
@@ -45,7 +50,7 @@ func (*PafimiServerT) AddRequest(request config.Request, result *string) error {
 	// increase jobid, make it atomic
 	atomic.AddUint64(&jobid, 1)
 
-	fmt.Println("new request with jobid ", jobid, ", copy", request.Src, " to ", request.Dst)
+	log.Println("new request with jobid", jobid, ", copy", request.Src, "to", request.Dst, "for user", request.User)
 
 	// check if src exists
 	f, err := os.Open(request.Src)
@@ -92,35 +97,43 @@ func ExecuteJob(request config.Request, jobid uint64) {
 	// and postpone some work, use another channel?
 
 	// create channel and worker go routine
-	filechan := make(chan string, 1000)
-	go loadBalancer(joblist[jobid], filechan)
+	filechan := make(chan FilenameAndSize, 1000)
+	go loadBalancer(jobid, filechan)
 	// find files and send them to worker
 	getFileList(request.Src, filechan)
-	// done, stop worker and update job state
+	// done, stop worker
 	close(filechan)
-	joblist[jobid].Finish()
-	log.Println("finished job ", jobid)
+	// log.Println("finished job", jobid)
 }
 
 // loadBalancer receives data through channel and distributes over servers
-func loadBalancer(job Job, filechan chan string) {
+// running for each job in parallel
+func loadBalancer(jobid uint64, filechan chan FilenameAndSize) {
 	started := false
 	for file := range filechan {
 		if !started {
 			started = true
-			job.Starttime = time.Now()
-			job.State = Running
+			t := joblist[jobid]
+			t.Start()
+			joblist[jobid] = t
 		}
 
-		fmt.Println("file:", file)
+		// FIXME DO WORK HERE
+		fmt.Println("file:", file.name)
 
-		job.Filesdone++
+		t := joblist[jobid]
+		t.IncrFiles(file.size)
+		joblist[jobid] = t
 	}
+	t := joblist[jobid]
+	t.Finish()
+	joblist[jobid] = t
+	log.Println("finished workers on job", jobid)
 }
 
 // getFileList append file names to filelist, depth first
-func getFileList(dir string, filechan chan string) {
-	fmt.Println("getFileList in ", dir)
+func getFileList(dir string, filechan chan FilenameAndSize) {
+	fmt.Println("getFileList in", dir)
 	f, _ := os.Open(dir)
 	defer f.Close()
 
@@ -142,11 +155,11 @@ func getFileList(dir string, filechan chan string) {
 	}
 
 	// create current directory in target
-	// FIXME
+	// FIXME TODO
 
 	// process files first
 	for _, fi := range filelist {
-		filechan <- dir + "/" + fi.Name()
+		filechan <- FilenameAndSize{name: dir + "/" + fi.Name(), size: fi.Size()}
 	}
 
 	// process chield directories
@@ -163,7 +176,6 @@ func main() {
 	}
 
 	joblist = make(map[uint64]Job)
-	fmt.Printf("joblist: %v", joblist)
 
 	server := new(PafimiServerT)
 	rpc.Register(server)
