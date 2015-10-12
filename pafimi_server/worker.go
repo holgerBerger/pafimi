@@ -19,7 +19,7 @@ var (
 // CopySlice is the RPC routine that does the copying, it will
 // be called on several servers
 func (*PafimiServerT) CopySlice(arg []string, result *string) error {
-	fmt.Println("pushing", arg)
+	// fmt.Println("pushing", arg)
 	workqmutex.Lock()
 	workq.PushBack(arg)
 	workqmutex.Unlock()
@@ -35,8 +35,9 @@ func CopyWorker() {
 		for workq.Len() > 0 {
 			workqmutex.Lock()
 			element := workq.Remove(workq.Front())
-			// DO WORK HERE
 			workqmutex.Unlock()
+			// TODO DO WORK HERE
+
 			fmt.Println("picked:", element)
 		}
 	}

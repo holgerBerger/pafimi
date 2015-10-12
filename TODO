@@ -9,7 +9,7 @@
   with certificats)
 - implement query of job state from client
   needs rpc code on both sides
-- implement load limiting
++ implement load limiting
   atm it runs as many jobs as come in in parallel, some queuing needed, could
   be done with channel on initial worker side (total number of jobs is then
   <= #workers * channel buffer depth)
