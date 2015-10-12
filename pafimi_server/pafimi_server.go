@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -133,7 +134,8 @@ func loadBalancer(jobid uint64, filechan chan FilenameAndSize) {
 			joblist[jobid] = t
 		}
 
-		// gather batches
+		// gather batches, we do not want to copy one by one
+		// as we receive, but all files of one directory in one batch
 		if file.name != "." && file.size != -1 {
 			// gather a batch of files
 			fileList = append(fileList, file.name)
@@ -169,7 +171,10 @@ func loadBalancer(jobid uint64, filechan chan FilenameAndSize) {
 	log.Println("finished workers on job", jobid)
 }
 
-// getFileList append file names to filelist, depth first
+// getFileList append file names to filelist, idea a) is implemented here
+// get directory list, sort subdirectories and files into seperate lists.
+// process files fist (=copy them with loadbalancer) and descend in
+// subdirectories afterwards, they should be created first
 func getFileList(dir string, filechan chan FilenameAndSize) {
 	fmt.Println("getFileList in", dir)
 	f, _ := os.Open(dir)
@@ -194,6 +199,8 @@ func getFileList(dir string, filechan chan FilenameAndSize) {
 
 	// create current directory in target
 	// FIXME TODO
+	// only needed if not created before descending, which is more efficient,
+	// but what about top level?
 
 	// process files first
 	for _, fi := range filelist {
@@ -201,6 +208,8 @@ func getFileList(dir string, filechan chan FilenameAndSize) {
 	}
 	// flush
 	filechan <- FilenameAndSize{name: ".", size: -1}
+
+	// FIXME TODO all child dirs should be created in target here
 
 	// process child directories
 	for _, fi := range dirlist {
