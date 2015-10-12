@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/rpc"
 	"os"
-
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -75,13 +74,6 @@ func (*PafimiServerT) AddRequest(request config.Request, result *string) error {
 	}
 
 	*result = "Jobid: " + strconv.FormatUint(jobid, 10)
-	return nil
-}
-
-// CopySlice is the RPC routine that does the copying, it will
-// be called on several servers
-func (*PafimiServerT) CopySlice(arg []string, result *string) error {
-	fmt.Println(arg)
 	return nil
 }
 
@@ -232,5 +224,9 @@ func main() {
 	server := new(PafimiServerT)
 	rpc.Register(server)
 
+	// start Copyworker, which is endless
+	go CopyWorker()
+
+	// start RPC server
 	StartServer()
 }
