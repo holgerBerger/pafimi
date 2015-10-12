@@ -1,0 +1,15 @@
+- implement creation of directory structure 
+  needs passing of target root and relativ traversal
+- implement copying itself
+  lazy way would be to use tar for a) and rsync with explicit lists for b)
+- implement user handling
+- implement security/authentification 
+  (workers are running as root, client could be setuid root as well and 
+  authenticate with a not-user-readable secret from a config file, or use TLS sockets
+  with certificats)
+- implement query of job state from client
+  needs rpc code on both sides
+- implement load limiting
+  atm it runs as many jobs as come in in parallel, some queuing needed, could
+  be done with channel on initial worker side (total number of jobs is then
+  <= #workers * channel buffer depth)
